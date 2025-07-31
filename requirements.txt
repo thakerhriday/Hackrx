@@ -8,3 +8,17 @@ python-dotenv>=0.21.0
 requests>=2.31.0
 fastapi
 uvicorn[standard]==0.24.0
+pinecone
+
+# Security and validation
+pydantic>=1.10.0
+httpx>=0.24.1
+
+# Authentication
+python-multipart>=0.0.6
+
+# Logging and utilities
+loguru>=0.7.2
+
+# Optional for Groq integration
+groq>=0.1.1
