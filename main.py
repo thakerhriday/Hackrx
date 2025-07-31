@@ -51,7 +51,7 @@ class ErrorResponse(BaseModel):
 
 # Your existing classes (FAISSRetriever, etc.) - keeping them as is
 class FAISSRetriever:
-    def __init__(self, text: str, embedding_model: str = 'all-MiniLM-L6-v2', chunk_size: int = 500, chunk_overlap: int = 50):
+    def __init__(self, text: str, embedding_model: str = 'all-MiniLM-L6-v2', chunk_size: int = 1000, chunk_overlap: int = 100):
         """
         Initialize FAISS retriever with extracted text
         
