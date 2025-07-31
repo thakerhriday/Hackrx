@@ -8,6 +8,10 @@ import importlib.util
 import sys
 import os
 
+# Ensure NEONDB_CONN is set in environment for NeonDB access
+if not os.getenv("NEONDB_CONN"):
+    raise RuntimeError("NEONDB_CONN environment variable must be set to your NeonDB connection string.")
+
 # Dynamically import 'testing-pyt.py' as a module
 module_path = os.path.join(os.path.dirname(__file__), 'testing-pyt.py')
 spec = importlib.util.spec_from_file_location('testing_pyt', module_path)
