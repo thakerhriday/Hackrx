@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """
 RAG System for PDF Processing and Query Answering
 Converted from Jupyter notebook for standalone execution

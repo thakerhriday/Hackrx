@@ -1,28 +1,9 @@
-# Core AI/ML libraries
+
+# Core dependencies
+faiss-cpu
 sentence-transformers>=2.2.2
 numpy>=1.24.0
-faiss-cpu
-
-# Document processing
 PyPDF2>=3.0.1
-python-docx>=0.8.11
-openpyxl>=3.1.0
-python-pptx>=0.6.21
-
-# Image processing
-Pillow>=9.5.0
-pytesseract>=0.3.10
-
-# Vector databases and search
-pinecone-client>=2.2.4
-astrapy>=0.7.0
-
-# LLM and language processing
 langchain-groq>=0.1.0
-
-# Web and data handling
+python-dotenv>=0.21.0
 requests>=2.31.0
-pandas>=2.0.0
-
-# Development and utilities
-typing-extensions>=4.5.0
