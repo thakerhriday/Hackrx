@@ -5,18 +5,12 @@ Converted from Jupyter notebook for standalone execution
 """
 
 import os
-import hashlib
-import mimetypes
-from typing import List, Dict, Any, Optional, Tuple
-import logging
 import json
-import csv
 import io
-import re
+from typing import List, Tuple
 
 # Core libraries
 import numpy as np
-import pandas as pd
 import requests
 
 # Vector search and embeddings
@@ -25,29 +19,12 @@ from sentence_transformers import SentenceTransformer
 
 # Document processing libraries
 import PyPDF2
-from docx import Document
-import openpyxl
-from pptx import Presentation
-from PIL import Image
-import pytesseract
 
 # LLM integration
 from langchain_groq import ChatGroq
-from groq import Groq
 from dotenv import load_dotenv
 
 load_dotenv()  # Load environment variables from .env file if present
-
-
-# Setup logging
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
-
-import faiss
-import numpy as np
-from sentence_transformers import SentenceTransformer
-from typing import List, Tuple
-import re
 
 class FAISSRetriever:
     def __init__(self, text: str, embedding_model: str = 'all-MiniLM-L6-v2', chunk_size: int = 500, chunk_overlap: int = 50):
@@ -211,26 +188,6 @@ def extract_pdf_from_url(url: str) -> str:
     except Exception as e:
         print(f"Error extracting PDF from URL: {str(e)}")
         return ""
-
-def extract_pdf_from_url(url: str) -> str:
-   """Extract text from PDF URL"""
-   try:
-       # Download PDF from URL
-       response = requests.get(url)
-       response.raise_for_status()
-
-       # Create a file-like object from the response content
-       pdf_file = io.BytesIO(response.content)
-
-       # Extract text using PyPDF2
-       pdf_reader = PyPDF2.PdfReader(pdf_file)
-       text = ""
-       for page in pdf_reader.pages:
-           text += page.extract_text() + "\n"
-       return text
-   except Exception as e:
-       print(f"Error extracting PDF from URL: {str(e)}")
-       return ""
 
 
 def process_pdf_queries(pdf_url: str, queries_json: str, groq_api_key: str) -> str:
