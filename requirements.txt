@@ -7,3 +7,4 @@ PyPDF2>=3.0.1
 langchain-groq>=0.1.0
 python-dotenv>=0.21.0
 requests>=2.31.0
+uvicorn[standard]==0.24.0
