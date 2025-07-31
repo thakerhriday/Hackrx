@@ -43,6 +43,11 @@ load_dotenv()  # Load environment variables from .env file if present
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+import faiss
+import numpy as np
+from sentence_transformers import SentenceTransformer
+from typing import List, Tuple
+import re
 
 class FAISSRetriever:
     def __init__(self, text: str, embedding_model: str = 'all-MiniLM-L6-v2', chunk_size: int = 500, chunk_overlap: int = 50):
@@ -168,7 +173,7 @@ class FAISSRetriever:
 
         return detailed_results
 
-
+# Usage example:
 def create_retriever_from_result(result: str) -> FAISSRetriever:
     """
     Create FAISS retriever from your extracted PDF text
@@ -181,8 +186,8 @@ def create_retriever_from_result(result: str) -> FAISSRetriever:
     """
     retriever = FAISSRetriever(
         text=result,
-        chunk_size=500,  # Adjust as needed
-        chunk_overlap=50  # Adjust as needed
+        chunk_size=1000,  
+        chunk_overlap=100 
     )
     return retriever
 
@@ -207,19 +212,25 @@ def extract_pdf_from_url(url: str) -> str:
         print(f"Error extracting PDF from URL: {str(e)}")
         return ""
 
+def extract_pdf_from_url(url: str) -> str:
+   """Extract text from PDF URL"""
+   try:
+       # Download PDF from URL
+       response = requests.get(url)
+       response.raise_for_status()
 
-def extract_pdf_content(file_path: str) -> str:
-    """Extract text from PDF files"""
-    try:
-        with open(file_path, 'rb') as file:
-            pdf_reader = PyPDF2.PdfReader(file)
-            text = ""
-            for page in pdf_reader.pages:
-                text += page.extract_text() + "\n"
-            return text
-    except Exception as e:
-        logger.error(f"Error extracting PDF content: {str(e)}")
-        return ""
+       # Create a file-like object from the response content
+       pdf_file = io.BytesIO(response.content)
+
+       # Extract text using PyPDF2
+       pdf_reader = PyPDF2.PdfReader(pdf_file)
+       text = ""
+       for page in pdf_reader.pages:
+           text += page.extract_text() + "\n"
+       return text
+   except Exception as e:
+       print(f"Error extracting PDF from URL: {str(e)}")
+       return ""
 
 
 def process_pdf_queries(pdf_url: str, queries_json: str, groq_api_key: str) -> str:
@@ -235,59 +246,88 @@ def process_pdf_queries(pdf_url: str, queries_json: str, groq_api_key: str) -> s
             temperature=0.1,
             max_tokens=150  # Reduced for shorter answers
         )
-
+        
         # Extract PDF content (done once)
         result = extract_pdf_from_url(pdf_url)
         if not result:
             return json.dumps({"error": "Failed to extract PDF content"})
-
+        
         # Create retriever (done once)
         retriever = create_retriever_from_result(result)
-
+        
         # Parse queries
         queries_data = json.loads(queries_json)
         queries = queries_data.get("queries", [])
-
+        
         answers = {}
-
+        
         # Optimized examples for concise responses
-        examples = """Examples of concise policy answers:
+        examples = """You are a policy expert providing precise, actionable answers. Follow these exact formats:
 
+## Format Patterns:
+
+**Time-based queries:**
 Q: What is the grace period for premium payment?
 A: 30 days grace period after due date.
 
-Q: What is the waiting period for pre-existing diseases?
+Q: What is the waiting period for pre-existing diseases?  
 A: 36 months continuous coverage required.
 
+Q: What is the waiting period for cataract surgery?
+A: 2 years waiting period.
+
+**Coverage queries:**
 Q: Does this policy cover maternity expenses?
 A: Yes, after 24 months continuous coverage. Limited to 2 deliveries per policy period.
 
-Q: What is the waiting period for cataract surgery?
-A: 2 years waiting period."""
+Q: Are dental procedures covered?
+A: Yes, up to ₹10,000 annually after 6 months waiting period.
 
+**Claim-related queries:**
+Q: What documents are required for claim submission?
+A: Original bills, discharge summary, diagnostic reports, and claim form within 30 days.
+
+Q: What is the claim settlement timeframe?
+A: 15-30 days after complete documentation received.
+
+**Exclusion queries:**
+Q: Is cosmetic surgery covered?
+A: No, cosmetic procedures are excluded unless medically necessary.
+
+**Limit queries:**
+Q: What is the annual coverage limit?
+A: ₹5 lakhs per policy year with ₹1 lakh sub-limit for OPD expenses."""
+
+        
         # Process each query individually
         for query in queries:
             # Get relevant chunks for this specific query
             relevant_chunks = retriever.retrieve(query, top_k=2)  # Reduced to 2 for faster processing
-
+            
             # Combine chunks for context
             context = "\n\n".join([chunk for chunk, score in relevant_chunks])
-
+            
             # Create focused prompt for concise answers
             prompt = f"""{examples}
 
 Based on the context below, provide a concise, specific answer:
+## Instructions:
+- Provide direct, specific answers using the exact format shown above
+- Include relevant numbers, timeframes, and conditions
+- Keep responses under 20-50 words when possible
+- If information is not in context, state "Information not available in policy documents"
+- Use active voice and clear terminology
 
-Context:
+## Context:
 {context}
 
 Q: {query}
 A:"""
-
+            
             # Get answer from ChatGroq
             response = llm.invoke(prompt)
             answer = response.content.strip()
-
+            
             # Clean the answer - remove any Q: and A: prefixes if present
             if answer.startswith("Q:"):
                 # Find the A: part and extract only the answer
@@ -297,13 +337,13 @@ A:"""
             elif answer.startswith("A:"):
                 # Remove A: prefix
                 answer = answer[2:].strip()
-
+            
             # Store only the clean answer
             answers[query] = answer
-
+        
         # Return compiled answers in clean JSON structure
         return json.dumps({"answers": answers}, indent=2)
-
+        
     except Exception as e:
         return json.dumps({"error": str(e)})
 
