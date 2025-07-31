@@ -1,17 +1,9 @@
-
 # Core dependencies
-setuptools>=65.0.0
-wheel
-fastapi==0.104.1
-uvicorn[standard]==0.24.0
-pydantic==2.5.0
-python-dotenv==1.0.0
-requests==2.31.0
-PyPDF2==3.0.1
-sentence-transformers==2.2.0
-faiss-cpu==1.7.4
-numpy==1.24.3
-langchain-groq==0.1.9
-groq==0.4.1
-python-multipart==0.0.6
-
+faiss-cpu
+sentence-transformers>=2.2.2
+numpy>=1.24.0
+PyPDF2>=3.0.1
+langchain-groq>=0.1.0
+python-dotenv>=0.21.0
+requests>=2.31.0
+fastapi
