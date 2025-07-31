@@ -186,8 +186,8 @@ def create_retriever_from_result(result: str) -> FAISSRetriever:
     """
     retriever = FAISSRetriever(
         text=result,
-        chunk_size=500,  # Adjust as needed
-        chunk_overlap=50  # Adjust as needed
+        chunk_size=1000,  # Adjust as needed
+        chunk_overlap=100  # Adjust as needed
     )
     return retriever
 
