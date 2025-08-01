@@ -1,24 +1,8 @@
-# Core dependencies
+# Core dependencies (NO torch here)
 faiss-cpu
 sentence-transformers>=2.2.2
 numpy>=1.24.0
 PyPDF2>=3.0.1
 langchain-groq>=0.1.0
-python-dotenv>=0.21.0
 requests>=2.31.0
-fastapi
-uvicorn[standard]==0.24.0
-pinecone
-
-# Security and validation
-pydantic>=1.10.0
-httpx>=0.24.1
-
-# Authentication
-python-multipart>=0.0.6
-
-# Logging and utilities
-loguru>=0.7.2
-
-# Optional for Groq integration
-groq>=0.1.1
+numpy==1.24.0
