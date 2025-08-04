@@ -14,7 +14,7 @@ import io
 import faiss
 from sentence_transformers import SentenceTransformer
 import PyPDF2
-from langchain_groq import ChatGroq
+import google.generativeai as genai
 
 # Setup logging
 logger = logging.getLogger()
@@ -163,69 +163,169 @@ def clean_answer(answer):
     
     return answer
 
-def process_pdf_queries(pdf_url, questions, groq_api_key):
-    """Main QA processing with improved prompting"""
+def parse_multi_answer_response(response_text, num_questions):
+    """Parse multiple answers from a single API response"""
+    answers = []
     
-    # Initialize LLM
-    llm = ChatGroq(
-        groq_api_key=groq_api_key,
-        model_name="llama-3.1-8b-instant",
-        temperature=0,  # More deterministic
-        max_tokens=200
+    # Try to split by numbered format first
+    lines = response_text.strip().split('\n')
+    current_answer = ""
+    answer_started = False
+    
+    for line in lines:
+        line = line.strip()
+        
+        # Check if line starts with a number (1., 2., etc.)
+        if re.match(r'^\d+\.?\s+', line):
+            if current_answer and answer_started:
+                answers.append(clean_answer(current_answer.strip()))
+            current_answer = re.sub(r'^\d+\.?\s+', '', line)
+            answer_started = True
+        elif answer_started:
+            current_answer += " " + line
+    
+    # Add the last answer
+    if current_answer and answer_started:
+        answers.append(clean_answer(current_answer.strip()))
+    
+    # If parsing failed, try alternative splitting methods
+    if len(answers) != num_questions:
+        # Try splitting by double newlines
+        alt_answers = [clean_answer(ans.strip()) for ans in response_text.split('\n\n') if ans.strip()]
+        if len(alt_answers) == num_questions:
+            return alt_answers
+        
+        # Try splitting by single newlines and filtering
+        alt_answers = []
+        for line in response_text.split('\n'):
+            line = line.strip()
+            if line and not re.match(r'^(ANSWERS?:?|Based on|According to)', line, re.IGNORECASE):
+                # Remove number prefixes
+                line = re.sub(r'^\d+\.?\s*', '', line)
+                if line:
+                    alt_answers.append(clean_answer(line))
+        
+        if len(alt_answers) >= num_questions:
+            return alt_answers[:num_questions]
+    
+    # Ensure we have the right number of answers
+    while len(answers) < num_questions:
+        answers.append("Answer not found in response.")
+    
+    return answers[:num_questions]
+
+def process_pdf_queries_optimized(pdf_url, questions, gemini_api_key):
+    """Optimized QA processing that sends all questions in one API call"""
+    
+    # Initialize Gemini
+    genai.configure(api_key=gemini_api_key)
+    
+    # Configure generation parameters
+    generation_config = {
+        "temperature": 0,
+        "top_p": 0.95,
+        "top_k": 64,
+        "max_output_tokens": 1000,  # Increased for multiple answers
+    }
+    
+    # Safety settings
+    safety_settings = [
+        {
+            "category": "HARM_CATEGORY_HARASSMENT",
+            "threshold": "BLOCK_MEDIUM_AND_ABOVE"
+        },
+        {
+            "category": "HARM_CATEGORY_HATE_SPEECH",
+            "threshold": "BLOCK_MEDIUM_AND_ABOVE"
+        },
+        {
+            "category": "HARM_CATEGORY_SEXUALLY_EXPLICIT",
+            "threshold": "BLOCK_MEDIUM_AND_ABOVE"
+        },
+        {
+            "category": "HARM_CATEGORY_DANGEROUS_CONTENT",
+            "threshold": "BLOCK_MEDIUM_AND_ABOVE"
+        },
+    ]
+    
+    # Initialize the model
+    model = genai.GenerativeModel(
+        model_name="gemini-2.0-flash-lite",
+        generation_config=generation_config,
+        safety_settings=safety_settings
     )
     
     # Extract PDF and create retriever
     pdf_text = extract_pdf_from_url(pdf_url)
     retriever = AdvancedFAISSRetriever(pdf_text, chunk_size=1000, chunk_overlap=200)
     
-    answers = []
+    # Get all unique relevant chunks for ALL questions
+    all_relevant_chunks = set()
+    combined_query = " ".join(questions)  # Combine all questions for better retrieval
     
+    # Retrieve for combined query
+    combined_chunks = retriever.retrieve(combined_query, top_k=8)
+    for chunk, score in combined_chunks:
+        if score > 0.3:
+            all_relevant_chunks.add(chunk)
+    
+    # Also retrieve for individual questions to ensure coverage
     for query in questions:
-        try:
-            # Retrieve relevant chunks
-            relevant_chunks = retriever.retrieve(query, top_k=3)
-            
-            if not relevant_chunks:
-                answers.append("I couldn't find relevant information in the document to answer this question.")
-                continue
-            
-            # Prepare context from retrieved chunks
-            context_parts = []
-            for i, (chunk, score) in enumerate(relevant_chunks):
-                context_parts.append(f"[Relevant Section {i+1}]:\n{chunk}")
-            
-            context = "\n\n".join(context_parts)
-            
-            # Improved prompt without examples that could bias answers
-            prompt = f"""You are an expert document analyst. Based ONLY on the provided context, answer the question accurately and concisely.
+        chunks = retriever.retrieve(query, top_k=3)
+        for chunk, score in chunks:
+            if score > 0.4:  # Higher threshold for individual queries
+                all_relevant_chunks.add(chunk)
+    
+    # Create single context from all relevant chunks
+    context_parts = []
+    for i, chunk in enumerate(all_relevant_chunks):
+        context_parts.append(f"[Section {i+1}]:\n{chunk}")
+    
+    context = "\n\n".join(context_parts)
+    
+    # Format all questions
+    questions_text = "\n".join([f"{i+1}. {q}" for i, q in enumerate(questions)])
+    
+    # Create comprehensive prompt
+    prompt = f"""You are an expert document analyst. Based ONLY on the provided context, answer ALL questions below accurately and concisely.
 
 IMPORTANT GUIDELINES:
 - Use only information explicitly stated in the context
-- If the answer is not in the context, say "This information is not available in the provided document"
+- If any answer is not in the context, say "This information is not available in the provided document"
 - Be specific with numbers, dates, and percentages when mentioned
-- Keep answers focused and direct
+- Answer each question in 1-2 sentences for simple answers, or 2-3 sentences when more detail is essential
+- Format your response as numbered answers (1., 2., 3., etc.)
 - Do not make assumptions or add external knowledge
 
 CONTEXT:
 {context}
 
-QUESTION: {query}
+QUESTIONS:
+{questions_text}
 
-ANSWER:"""
+Please provide numbered answers in the following format:
+1. [Answer to question 1]
+2. [Answer to question 2]
+3. [Answer to question 3]
+...and so on.
 
-            # Get response from LLM
-            response = llm.invoke(prompt)
-            answer = response.content.strip()
-            
-            # Clean up the answer - FIXED: removed self reference
-            answer = clean_answer(answer)
-            answers.append(answer)
-            
-        except Exception as e:
-            logger.error(f"Error processing question '{query}': {str(e)}")
-            answers.append("An error occurred while processing this question.")
-    
-    return answers
+ANSWERS:"""
+
+    try:
+        # Get response from Gemini
+        response = model.generate_content(prompt)
+        response_text = response.text.strip()
+        
+        # Parse individual answers from the response
+        answers = parse_multi_answer_response(response_text, len(questions))
+        
+        logger.info(f"Successfully processed {len(questions)} questions in one API call")
+        return answers
+        
+    except Exception as e:
+        logger.error(f"Error processing questions: {str(e)}")
+        # Fallback: return error message for all questions
+        return [f"An error occurred while processing the questions: {str(e)}"] * len(questions)
 
 # ---- AWS Lambda entrypoint ----
 
@@ -244,12 +344,12 @@ def lambda_handler(event, context):
         # Input validation
         pdf_url = data.get("documents")
         questions = data.get("questions", [])
-        groq_api_key = "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"  # Consider using environment variable
+        gemini_api_key = "YOUR_GEMINI_API_KEY_HERE" 
         
-        if not groq_api_key:
+        if not gemini_api_key or gemini_api_key == "YOUR_GEMINI_API_KEY_HERE":
             return {
                 'statusCode': 500,
-                'body': json.dumps({"error": "GROQ_API_KEY not configured"})
+                'body': json.dumps({"error": "GEMINI_API_KEY not configured"})
             }
         
         if not pdf_url or not questions or not isinstance(questions, list):
@@ -258,13 +358,11 @@ def lambda_handler(event, context):
                 'body': json.dumps({"error": "Both 'documents' URL and 'questions' list are required."})
             }
 
-        # Process questions
-        answers = process_pdf_queries(pdf_url, questions, groq_api_key)
+        # Process questions with optimized approach
+        answers = process_pdf_queries_optimized(pdf_url, questions, gemini_api_key)
         
         response = {
             "answers": answers,
-            "document_processed": True,
-            "total_questions": len(questions)
         }
 
         return {
